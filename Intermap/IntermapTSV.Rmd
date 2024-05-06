@@ -1,0 +1,114 @@
+```{r}
+library(dplyr)
+library(signal)
+library(fusion)
+```
+Load the data
+
+```{r}
+meta <- local(get(load("External_intermap_ANN.daE"))) 
+meta <- meta@obsDescr[[1]] 
+test <- meta %>% dplyr::filter(Country == "USA") 
+usa_obese <- test %>% dplyr::filter(BMI1234 >= 30) 
+usa_healthy <- test %>% dplyr::filter(BMI1234 >= 18.5 & BMI1234 <= 25.0)  
+da <- local(get(load("External_intermap_URI_EXTr02@local_noesy@bc-best-1h1d-np.daE"))) 
+da@obsDescr[[1]]$sampleID <- sapply(strsplit(da@obsDescr[[1]]$dataPath,"/"), "[", 6)  
+an <- da@obsDescr[[1]] 
+length(which(an$sampleID %in% usa_obese$SPEC_ID)) 
+length(which(an$sampleID %in% usa_healthy$SPEC_ID))
+```
+Filter only the matching rows, and subsample 150 from each subset
+
+```{r}
+resampleDAE <- function(da, n, replace=FALSE) {
+  random_ids <- sample(1:nrow(da), n, replace=replace)
+  da_sampling <- rep(FALSE, nrow(da))
+  da_sampling[random_ids] = TRUE
+  
+  return(filterWith(da, da_sampling))
+}
+
+daUSAObese <- resampleDAE(filterWith(da, an$sampleID %in% usa_obese$SPEC_ID), 150)
+
+daUSAHealt <- resampleDAE(filterWith(da, an$sampleID %in% usa_healthy$SPEC_ID), 150)
+```
+
+Now we just need the metadata
+
+```{r}
+#by <- join_by(c('sampleID' = 'SPEC_ID'))
+
+metaUSAObese <- left_join(daUSAObese@obsDescr[[1]], usa_obese, by = c('sampleID' = 'SPEC_ID'))
+metaUSAHealt <- left_join(daUSAHealt@obsDescr[[1]], usa_healthy, by = c('sampleID' = 'SPEC_ID'))
+
+#Filter columns
+metaUSAObese <- metaUSAObese[,c('sampleID.y', 'sampleTimePoint', 'AGE', 'SEX', 'BMI1234', 'experiment')]
+metaUSAHealt <- metaUSAHealt[,c('sampleID.y', 'sampleTimePoint', 'AGE', 'SEX', 'BMI1234', 'experiment')]
+
+metaUSAObese['category'] <- 1
+metaUSAHealt['category'] <- 0
+metaUSAObese['Label'] <- 1
+metaUSAHealt['Label'] <- 0
+metaUSAObese['Class'] <- 1
+metaUSAHealt['Class'] <- 0
+
+nColumns <- length(names(metaUSAObese))
+```
+ Get the spectra data from -0.1 to 10 with 8k points
+ 
+```{r}
+```
+ 
+
+Create a TSV file
+```{r}
+
+ppm <- as.numeric(da@varName)
+from <- -0.1
+to <- 10
+roi <- ppm >= from  & ppm <= to
+nbPoints <- 8192
+
+ppmRoi <- ppm[roi]
+ppmRoi8K <- seq(ppmRoi[[1]], ppmRoi[[length(ppmRoi)]], length.out = nbPoints)
+
+yObese <- Re(daUSAObese@.Data)
+yHealthy <- Re(daUSAHealt@.Data)
+yObese8K <- apply(yObese, 1, function(yi){
+              interp1(x = ppmRoi,
+              y = yi,
+              xi = ppmRoi8K,
+              method = "spline")}) 
+
+yHealthy8K <- apply(yHealthy, 1, function(yi){
+              interp1(x = ppmRoi,
+              y = yi,
+              xi = ppmRoi8K,
+              method = "spline")}) 
+```
+
+Transpose and
+```{r}
+yObese8K <- round(t(yObese8K), 2)
+yHealthy8K <- round(t(yHealthy8K), 2)
+
+ppmRoi8K <- as.numeric(format(round(ppmRoi8K, 8), nsmall = 8))
+```
+
+Save as TSV
+
+```{r}
+
+metaUSA <- rbind(metaUSAObese, metaUSAHealt)
+yUSA <- rbind(yObese8K, yHealthy8K)
+
+dfUSA <- cbind(metaUSA, yUSA)
+columnNames <- names(dfUSA)
+columnNames[[1]] <- 'id'
+
+columnNames[(nColumns + 1):length(columnNames)] <- ppmRoi8K
+names(dfUSA) <- columnNames
+
+write.table(dfUSA, file="data_intermap.tsv", sep="\t", row.names = FALSE, quote=FALSE)
+```
+

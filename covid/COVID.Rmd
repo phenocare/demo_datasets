@@ -1,0 +1,215 @@
+```{r}
+library(fusion)
+library(dplyr)
+
+```
+
+```{r}
+d1 <- local(get(load('pathwest/covid19_pathwest_PLA_ANN.daE')))
+d2 <- local(get(load('pathwest_follow_up/covid19_pathwestFU_ANN_recovery.daE')))
+#d3 <- local(get(load('covid19_HTYBK_ANN.daE')))
+```
+
+```{r}
+meta1 <- d1@obsDescr[[1]]
+meta2 <- d2@obsDescr[[1]]
+#meta3 <- d3@obsDescr[[1]]
+```
+
+```{r}
+
+meta1 <- meta1[,c('sampleID', 'tpoint', 'class', 'rcap', 'sex...12', 'age', 'BMI', 'MS.Exp')]
+names(meta1)[5] <- paste('sex')
+meta1 <- transform(meta1, BMI=as.numeric(BMI))
+
+meta1$sex <- unlist(lapply(meta1$sex, function(x) {
+  if(is.na(x))
+    return(NA)
+  if (startsWith(x, "Fem")) {
+    return ("F")
+  } else {
+    return ("M")
+    }
+  }))
+
+# Pathwest 17 Acute Patient (+) SARS-CoV-2
+
+#foo <- meta1[which(meta1['class']== 'Patient (+) SARS-CoV-2' & meta1$covidSwab=="pos"),]
+covid_acute <- meta1[which(meta1['class'] == 'Patient (+) SARS-CoV-2' & meta1['tpoint'] == 1 & !is.na(meta1$MS.Exp)),]
+covid_acute <- covid_acute[,c('sampleID', 'class', 'sex', 'age', 'BMI')]
+
+
+#Controls only 34
+healthy_control <- meta1[which((meta1['class'] == 'Healthy' | meta1['class'] == 'Healthy*' |  meta1['class'] == 'Healthy_intern') & meta1['tpoint'] == 1),]
+healthy_control$class <- 'Healthy_control'
+
+healthy_control <- healthy_control[,c('sampleID', 'class', 'sex', 'age', 'BMI')]
+```
+34 participants 3 months SARS-CoV-2 positive 3 months after
+
+```{r}
+# Pathwest Follow UP 34
+meta2 <- meta2[,c('sampleID', 'gender', 'age', 'bmi0')]
+names(meta2)[2] <- paste('sex')
+names(meta2)[4] <- paste('BMI')
+follow_up <-meta2
+follow_up$class <- 'Follow_up'
+```
+
+Integrate into a single file 
+
+```{r}
+meta <- rbind(follow_up, covid_acute, healthy_control)
+save(meta, file="./Covid19_pathwest.rda")
+```
+
+Join with data
+
+```{r}
+#covid19_pathwest_PLA_LGYr07
+#covid19_pathwestFollowUp_PLA_LGYr05
+
+library(jsonlite)
+
+load("~/Documents/git/gitea/RL_paper/covid/Covid19_pathwest.rda")
+
+sp_pathwest <- fromJSON("https://anpc.mylims.org/ZTyOHk8mzGzVaUEJrRCapp/link?runName=LGYr07")
+sp_follow_up <- fromJSON("https://anpc.mylims.org/ZTyOHk8mzGzVaUEJrRCapp/link?runName=LGYr02")
+
+
+sp_pathwest$list$noesygppr1d <- sp_pathwest$list$noesygppr1d[,c('sampleId', 'expno', 'dataPath')]
+sp_follow_up$list$noesygppr1d <- sp_follow_up$list$noesygppr1d[,c('sampleId', 'expno', 'dataPath')]
+
+sp_pathwest$list$cpmgpr1d <- sp_pathwest$list$cpmgpr1d[,c('sampleId', 'expno', 'dataPath')]
+sp_follow_up$list$cpmgpr1d <- sp_follow_up$list$cpmgpr1d[,c('sampleId', 'expno', 'dataPath')]
+
+sp_pathwest$list$noesygppr1d <- transform(sp_pathwest$list$noesygppr1d, expno = as.numeric(expno))
+sp_pathwest$list$cpmgpr1d <- transform(sp_pathwest$list$cpmgpr1d, expno = as.numeric(expno))
+sp_follow_up$list$noesygppr1d <- transform(sp_follow_up$list$noesygppr1d, expno = as.numeric(expno))
+sp_follow_up$list$cpmgpr1d <- transform(sp_follow_up$list$cpmgpr1d, expno = as.numeric(expno))
+
+```
+Select the samples that contains spectra(all of them in theory)
+```{r}
+# NOESY
+sum(healthy_control$sampleID %in% sp_pathwest$list$noesygppr1d$sampleId)
+sum(covid_acute$sampleID %in% sp_pathwest$list$noesygppr1d$sampleId)
+sum(follow_up$sampleID %in% sp_follow_up$list$noesygppr1d$sampleId)
+
+healthy_control = healthy_control[healthy_control$sampleID %in% sp_pathwest$list$noesygppr1d$sampleId,]
+covid_acute = covid_acute[covid_acute$sampleID %in% sp_pathwest$list$noesygppr1d$sampleId, ]
+follow_up = follow_up[follow_up$sampleID %in% sp_follow_up$list$noesygppr1d$sampleId,]
+
+# Get only the repetition with the highest expno
+sp_pathwest_noesy_maxexpno <- (sp_pathwest$list$noesygppr1d %>% group_by(sampleId)) %>% summarise(expno = max(expno), dataPath = max(dataPath))
+sp_pathwest_cpmg_maxexpno <- (sp_pathwest$list$cpmgpr1d %>% group_by(sampleId)) %>% summarise(expno = max(expno), dataPath = max(dataPath))
+
+sp_follow_upt_noesy_maxexpno <- (sp_follow_up$list$noesygppr1d %>% group_by(sampleId)) %>% summarise(expno = max(expno), dataPath = max(dataPath))
+sp_follow_up_cpmg_maxexpno <- (sp_follow_up$list$cpmgpr1d %>% group_by(sampleId)) %>% summarise(expno = max(expno), dataPath = max(dataPath))
+```
+Join metadata and spectra info
+```{r}
+healthy_control <- left_join(healthy_control,  sp_pathwest_noesy_maxexpno, by = c('sampleID' = 'sampleId'))
+healthy_control <- left_join(healthy_control,  sp_pathwest_cpmg_maxexpno, by = c('sampleID' = 'sampleId'), suffix = c("_noesy", "_cpmg"))
+
+covid_acute <-  left_join(covid_acute,  sp_pathwest_noesy_maxexpno, by = c('sampleID' = 'sampleId'))
+covid_acute <-  left_join(covid_acute,  sp_pathwest_cpmg_maxexpno, by = c('sampleID' = 'sampleId'), suffix = c("_noesy", "_cpmg"))
+
+follow_up <-  left_join(follow_up, sp_follow_upt_noesy_maxexpno, by = c('sampleID' = 'sampleId'))
+follow_up <-  left_join(follow_up, sp_follow_up_cpmg_maxexpno, by = c('sampleID' = 'sampleId'), suffix = c("_noesy", "_cpmg"))
+
+covid_19 <- rbind(healthy_control, covid_acute, follow_up)
+
+names(covid_19)[[2]] <- paste("Class")
+covid_19$category <- covid_19$Class
+covid_19$sex <- unlist(covid_19$sex)
+```
+Download the spectra and create the 2 tsv
+
+```{r, eval=TRUE}
+#NOESY
+baseURL <- "https://anpc.mylims.org/ZTyOHk8mzGzVaUEJrRCapp/zip?"    
+Y <- list()
+brukerFolder <- tempdir()
+ind <- 1
+ppm <- NULL
+nbPoints <- 8192
+for( pathi in covid_19$dataPath_noesy) {
+  # Prepare link to data
+  path <-  strsplit(pathi, "/")[[1]]
+  brukerZip <- paste0(baseURL, "device=", path[[4]], "&expname=", path[[6]], "&expno=", path[[7]])
+  
+  temp <- tempfile()
+  download.file(brukerZip,temp)
+  unzip(temp, exdir = brukerFolder)
+
+  spectrum <- readExperiment(paste0(brukerFolder, pathi), options = list(what = c("specOnly"), specOpts = list(uncalibrate = FALSE, fromTo = c(-0.1,10), length.out = nbPoints)))$spec$spec[[1]]$spec
+  Y[[ind]] <- spectrum$y
+  ind <- ind + 1
+  if(is.null(ppm)) {
+    ppm <- spectrum$x
+  }
+}
+
+Y <-round(t(matrix(unlist(Y), nrow=nbPoints, ncol = dim(covid_19)[[1]])), 2)
+covid_19_noesy <- cbind(covid_19[, c( "sampleID", "category", "Class", "sex","age","BMI")], Y)
+
+```
+CPMG
+```{r, eval=TRUE}
+#CPMG
+baseURL <- "https://anpc.mylims.org/ZTyOHk8mzGzVaUEJrRCapp/zip?"    
+Y <- list()
+brukerFolder <- tempdir()
+ind <- 1
+ppm <- NULL
+nbPoints <- 8192
+for( pathi in covid_19$dataPath_cpmg) {
+  # Prepare link to data
+  path <-  strsplit(pathi, "/")[[1]]
+  brukerZip <- paste0(baseURL, "device=", path[[4]], "&expname=", path[[6]], "&expno=", path[[7]])
+  
+  temp <- tempfile()
+  download.file(brukerZip,temp)
+  unzip(temp, exdir = brukerFolder)
+
+  spectrum <- readExperiment(paste0(brukerFolder, pathi), options = list(what = c("specOnly"), specOpts = list(uncalibrate = FALSE, fromTo = c(-0.1,10), length.out = nbPoints)))$spec$spec[[1]]$spec
+  Y[[ind]] <- spectrum$y
+  ind <- ind + 1
+  if(is.null(ppm)) {
+    ppm <- spectrum$x
+  }
+}
+
+Y <-round(t(matrix(unlist(Y), nrow=nbPoints, ncol = dim(covid_19)[[1]])), 2)
+
+
+covid_19_cpmg <- cbind(covid_19[, c( "sampleID", "category", "Class", "sex","age","BMI")], Y)
+
+```
+Format for the tsv
+```{r}
+ppmRoi8K <- as.numeric(format(round(ppm, 8), nsmall = 8))
+
+nColumns <- 6 # Number of metadata columns
+columnNames <- names(covid_19_noesy)
+columnNames[[1]] <- 'id'
+
+columnNames[(nColumns + 1):length(columnNames)] <- ppmRoi8K
+names(covid_19_noesy) <- columnNames
+names(covid_19_cpmg) <- columnNames
+
+covid_19_noesy <-  covid_19_noesy %>% replace(is.na(.), 0)
+covid_19_cpmg <-  covid_19_cpmg %>% replace(is.na(.), 0)
+
+covid_19_noesy$sex <- unlist(covid_19_noesy$sex)
+covid_19_cpmg$sex <- unlist(covid_19_cpmg$sex)
+
+
+write.table(covid_19_noesy, file="covid_19_noesy.tsv", sep="\t", row.names = FALSE, quote=FALSE)
+write.table(covid_19_cpmg, file="covid_19_cpmg.tsv", sep="\t", row.names = FALSE, quote=FALSE)
+```
+
+
+
+

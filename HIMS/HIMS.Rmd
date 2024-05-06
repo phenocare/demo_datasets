@@ -1,0 +1,132 @@
+```{r}
+library(fusion)
+```
+
+
+```{r}
+cpmg <- local(get(load("hims_C1_PLA_HIMrXX_PROF.PLASMA.CPMG.daE")))
+noesy <- local(get(load("hims_C1_PLA_HIMrXX_PROF.PLASMA.NOESY.daE")))
+
+meta <- read.csv("HIMS_short_Annotation.csv")
+meta <- meta[complete.cases(meta),]
+```
+```{r}
+dim(cpmg)
+dim(noesy)
+dim(meta)
+```
+Filter the need data
+```{r}
+
+resample <- function(da, n, replace=FALSE) {
+  random_ids <- sample(1:nrow(da), n, replace=replace)
+  da_sampling <- rep(FALSE, nrow(da))
+  da_sampling[random_ids] = TRUE
+  return(da[da_sampling,])
+}
+
+resampleDAE <- function(da, n, replace=FALSE) {
+  random_ids <- sample(1:nrow(da), n, replace=replace)
+  da_sampling <- rep(FALSE, nrow(da))
+  da_sampling[random_ids] = TRUE
+  
+  return(filterWith(da, da_sampling))
+}
+
+# 100 men without diabetes with a history of myocardial infarction(change by heart.attack)
+group1 <- resample(meta[meta$Diabete == 0 & meta$Heart.attack == 1, ], 100)
+# 100 control with no history of either diabetes or cardiovascular diseases
+group2 <- meta[meta$Diabete == 0 & meta$Cardiovascular == 0 & meta$Heart.attack == 0, ]
+
+```
+Match min max of Age and BMI
+
+```{r}
+minAge <- min(group1$Age)
+maxAge <- max(group1$Age)
+minBMI <- min(group1$W4_BMI)
+maxBMI <- max(group1$W4_BMI)
+group2 <- group2[group2$Age >= minAge & group2$Age <= maxAge & group2$W4_BMI >= minBMI & group2$W4_BMI <= maxBMI,]
+
+group2 <- resample(group2, 100)
+
+```
+
+Get 100 NOESY and 100 CPMG
+
+```{r}
+by <- join_by(sampleID)
+
+noesy100G1 <- filterWith(noesy, noesy@obsDescr[[1]]$sampleID %in% group1$sampleID)
+noesy100G1@obsDescr[[1]]['category'] = 'G1'
+noesy100G1@obsDescr[[1]] <- left_join(noesy100G1@obsDescr[[1]], group1, by)
+
+cpmg100G1 <- filterWith(cpmg, cpmg@obsDescr[[1]]$sampleID %in% group1$sampleID)
+cpmg100G1@obsDescr[[1]]['category'] = 'G1' 
+cpmg100G1@obsDescr[[1]] <- left_join(cpmg100G1@obsDescr[[1]], group1, by)
+
+
+noesy100G2 <- filterWith(noesy, noesy@obsDescr[[1]]$sampleID %in% group2$sampleID)
+noesy100G2@obsDescr[[1]]['category'] = 'G2' 
+noesy100G2@obsDescr[[1]] <- left_join(noesy100G2@obsDescr[[1]], group2, by)
+
+cpmg100G2 <- filterWith(cpmg, cpmg@obsDescr[[1]]$sampleID %in% group2$sampleID)
+cpmg100G2@obsDescr[[1]]['category'] = 'G1' 
+cpmg100G2@obsDescr[[1]] <- left_join(cpmg100G2@obsDescr[[1]], group2, by)
+
+```
+
+
+```{r}
+dim(noesy100G1)
+dim(cpmg100G1)
+dim(noesy100G2)
+dim(cpmg100G2)
+
+Y <- rbind(noesy100G1@.Data, cpmg100G1@.Data, noesy100G2@.Data, cpmg100G2@.Data)
+metaY <- rbind(noesy100G1@obsDescr[[1]], cpmg100G1@obsDescr[[1]], noesy100G2@obsDescr[[1]], cpmg100G2@obsDescr[[1]])
+```
+Create a TSV file
+```{r}
+
+ppm <- as.numeric(noesy100G1@varName)
+from <- -0.1
+to <- 10
+roi <- ppm >= from  & ppm <= to
+nbPoints <- 8192
+
+ppmRoi <- ppm[roi]
+ppmRoi8K <- seq(ppmRoi[[1]], ppmRoi[[length(ppmRoi)]], length.out = nbPoints)
+
+Y2 <- apply(Y, 1, function(yi){
+              interp1(x = ppmRoi,
+              y = yi,
+              xi = ppmRoi8K,
+              method = "spline")}) 
+```
+Transpose and
+```{r}
+Y2 <- round(t(Y2), 2)
+ppmRoi8K <- as.numeric(format(round(ppmRoi8K, 8), nsmall = 8))
+```
+
+Save as TSV
+
+```{r}
+#c('sampleID.y', 'sampleTimePoint', 'AGE', 'SEX', 'BMI1234', 'experiment')]
+metaHIMS <- metaY[,c('sampleID', 'EXP', 'category', 'Age', 'Age_cat', 'W4_BMI', 'BMI_cat','Diabete', 'Cardiovascular', 'Heart.attack')]
+names(metaHIMS) <- c('id', 'experiment', 'category', 'AGE', 'AGE_cat', 'BMI', 'BMI_cat','Diabete', 'Cardiovascular', 'Heart_attack') 
+
+metaHIMS$id<- paste0(str_replace_all(metaHIMS[, 'experiment'], "PROF_PLASMA_", ""), "/", metaHIMS[, 'id'])
+
+nColumns <- length(names(metaHIMS))
+
+dfHIMS <- cbind(metaHIMS, Y2)
+
+columnNames <- names(dfHIMS)
+
+columnNames[(nColumns + 1):length(columnNames)] <- ppmRoi8K
+names(dfHIMS) <- columnNames
+
+write.table(dfHIMS, file="data_HIMS.tsv", sep="\t", row.names = FALSE, quote=FALSE)
+```
