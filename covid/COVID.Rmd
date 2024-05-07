@@ -1,10 +1,11 @@
 ```{r}
 library(fusion)
 library(dplyr)
-
+library(nmr.parser)
 ```
 
 ```{r}
+dataPath = Sys.getenv("DATA")
 d1 <- local(get(load('pathwest/covid19_pathwest_PLA_ANN.daE')))
 d2 <- local(get(load('pathwest_follow_up/covid19_pathwestFU_ANN_recovery.daE')))
 #d3 <- local(get(load('covid19_HTYBK_ANN.daE')))
@@ -71,7 +72,7 @@ Join with data
 
 library(jsonlite)
 
-load("~/Documents/git/gitea/RL_paper/covid/Covid19_pathwest.rda")
+load("./Covid19_pathwest.rda")
 
 sp_pathwest <- fromJSON("https://anpc.mylims.org/ZTyOHk8mzGzVaUEJrRCapp/link?runName=LGYr07")
 sp_follow_up <- fromJSON("https://anpc.mylims.org/ZTyOHk8mzGzVaUEJrRCapp/link?runName=LGYr02")
