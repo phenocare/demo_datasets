@@ -6,12 +6,13 @@ library(fusion)
 Load the data
 
 ```{r}
+dataPath = Sys.getenv("DATA")
 meta <- local(get(load("External_intermap_ANN.daE"))) 
 meta <- meta@obsDescr[[1]] 
 test <- meta %>% dplyr::filter(Country == "USA") 
 usa_obese <- test %>% dplyr::filter(BMI1234 >= 30) 
 usa_healthy <- test %>% dplyr::filter(BMI1234 >= 18.5 & BMI1234 <= 25.0)  
-da <- local(get(load("External_intermap_URI_EXTr02@local_noesy@bc-best-1h1d-np.daE"))) 
+da <- local(get(load(paste0(dataPath, "/External_intermap_URI_EXTr02@local_noesy@bc-best-1h1d-np.daE"))))
 da@obsDescr[[1]]$sampleID <- sapply(strsplit(da@obsDescr[[1]]$dataPath,"/"), "[", 6)  
 an <- da@obsDescr[[1]] 
 length(which(an$sampleID %in% usa_obese$SPEC_ID)) 
@@ -44,13 +45,16 @@ metaUSAHealt <- left_join(daUSAHealt@obsDescr[[1]], usa_healthy, by = c('sampleI
 #Filter columns
 metaUSAObese <- metaUSAObese[,c('sampleID.y', 'sampleTimePoint', 'AGE', 'SEX', 'BMI1234', 'experiment')]
 metaUSAHealt <- metaUSAHealt[,c('sampleID.y', 'sampleTimePoint', 'AGE', 'SEX', 'BMI1234', 'experiment')]
+names(metaUSAObese)[[5]] <- paste("BMI")
+names(metaUSAHealt)[[5]] <- paste("BMI")
 
-metaUSAObese['category'] <- 1
-metaUSAHealt['category'] <- 0
-metaUSAObese['Label'] <- 1
-metaUSAHealt['Label'] <- 0
-metaUSAObese['Class'] <- 1
-metaUSAHealt['Class'] <- 0
+
+metaUSAObese['category'] <- "Obese"
+metaUSAHealt['category'] <- "Normal"
+metaUSAObese['Label'] <- "Obese"
+metaUSAHealt['Label'] <- "Normal"
+metaUSAObese['Class'] <- "Obese"
+metaUSAHealt['Class'] <- "Normal"
 
 nColumns <- length(names(metaUSAObese))
 ```
@@ -109,6 +113,6 @@ columnNames[[1]] <- 'id'
 columnNames[(nColumns + 1):length(columnNames)] <- ppmRoi8K
 names(dfUSA) <- columnNames
 
-write.table(dfUSA, file="data_intermap.tsv", sep="\t", row.names = FALSE, quote=FALSE)
+write.table(dfUSA, file="data_intermap2.tsv", sep="\t", row.names = FALSE, quote=FALSE)
 ```
 

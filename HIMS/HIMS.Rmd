@@ -1,11 +1,13 @@
 ```{r}
 library(fusion)
+library(stringr)
 ```
 
 
 ```{r}
-cpmg <- local(get(load("hims_C1_PLA_HIMrXX_PROF.PLASMA.CPMG.daE")))
-noesy <- local(get(load("hims_C1_PLA_HIMrXX_PROF.PLASMA.NOESY.daE")))
+dataPath = Sys.getenv("DATA")
+cpmg <- local(get(load(paste0(dataPath, "/hims_C1_PLA_HIMrXX_PROF.PLASMA.CPMG.daE"))))
+noesy <- local(get(load(paste0(dataPath, "/hims_C1_PLA_HIMrXX_PROF.PLASMA.NOESY.daE"))))
 
 meta <- read.csv("HIMS_short_Annotation.csv")
 meta <- meta[complete.cases(meta),]
@@ -58,20 +60,20 @@ Get 100 NOESY and 100 CPMG
 by <- join_by(sampleID)
 
 noesy100G1 <- filterWith(noesy, noesy@obsDescr[[1]]$sampleID %in% group1$sampleID)
-noesy100G1@obsDescr[[1]]['category'] = 'G1'
+noesy100G1@obsDescr[[1]]['category'] = 'Heart_Attack'
 noesy100G1@obsDescr[[1]] <- left_join(noesy100G1@obsDescr[[1]], group1, by)
 
 cpmg100G1 <- filterWith(cpmg, cpmg@obsDescr[[1]]$sampleID %in% group1$sampleID)
-cpmg100G1@obsDescr[[1]]['category'] = 'G1' 
+cpmg100G1@obsDescr[[1]]['category'] = 'Heart_Attack' 
 cpmg100G1@obsDescr[[1]] <- left_join(cpmg100G1@obsDescr[[1]], group1, by)
 
 
 noesy100G2 <- filterWith(noesy, noesy@obsDescr[[1]]$sampleID %in% group2$sampleID)
-noesy100G2@obsDescr[[1]]['category'] = 'G2' 
+noesy100G2@obsDescr[[1]]['category'] = 'Control' 
 noesy100G2@obsDescr[[1]] <- left_join(noesy100G2@obsDescr[[1]], group2, by)
 
 cpmg100G2 <- filterWith(cpmg, cpmg@obsDescr[[1]]$sampleID %in% group2$sampleID)
-cpmg100G2@obsDescr[[1]]['category'] = 'G1' 
+cpmg100G2@obsDescr[[1]]['category'] = 'Control' 
 cpmg100G2@obsDescr[[1]] <- left_join(cpmg100G2@obsDescr[[1]], group2, by)
 
 ```
@@ -128,5 +130,7 @@ columnNames <- names(dfHIMS)
 columnNames[(nColumns + 1):length(columnNames)] <- ppmRoi8K
 names(dfHIMS) <- columnNames
 
-write.table(dfHIMS, file="data_HIMS.tsv", sep="\t", row.names = FALSE, quote=FALSE)
+write.table(dfHIMS[dfHIMS$experiment=="PROF_PLASMA_CPMG", ], file="data_HIMS_cpmg.tsv", sep="\t", row.names = FALSE, quote=FALSE)
+write.table(dfHIMS[dfHIMS$experiment=="PROF_PLASMA_NOESY", ], file="data_HIMS_noesy.tsv", sep="\t", row.names = FALSE, quote=FALSE)
+
 ```
